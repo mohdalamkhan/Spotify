@@ -1,97 +1,252 @@
+
 import React, { useEffect, useState } from "react";
 
 const App = () => {
-  const [keyword, setKeyword] = useState("");
-  const [tracks, setTracks] = useState([]);
-  const [loader, setLoader] = useState(false);
+  const CLIENT_ID = "3907a2a12bdc4293bbd2ba606c429fc0";
+  const CLIENT_SECRET = "37826830e04b41dfb722edd976f83773";
 
-  const getMusicTracks = async () => {
-    setLoader(true);
-    let musicData = await fetch(
-      `https://v1.nocodeapi.com/mohdalamkhan/spotify/QAUKykoEWCwkbNUu/search?q=${keyword === ""? "new release": keyword}newsong&type=track`
-    );
-    let convertedData = await musicData.json();
-    setTracks(convertedData.tracks.items);
-    setLoader(false);
+  const [token, setToken] = useState("");
+  const [newReleases, setNewReleases] = useState([]);
+  const [featuredPlaylists, setFeaturedPlaylists] = useState([]);
+  const [genres, setGenres] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [playing, setPlaying] = useState(null);
+
+  // Get access token from Spotify
+  useEffect(() => {
+    const getToken = async () => {
+      const response = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: "Basic " + btoa(CLIENT_ID + ":" + CLIENT_SECRET),
+        },
+        body: "grant_type=client_credentials",
+      });
+      const data = await response.json();
+      setToken(data.access_token);
+    };
+    getToken();
+  }, []);
+
+  // Fetch all data once we have the token
+  useEffect(() => {
+    if (token) {
+      const fetchData = async () => {
+        try {
+          // Fetch new releases
+          const newReleasesResponse = await fetch(
+            "https://api.spotify.com/v1/browse/new-releases",
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          const newReleasesData = await newReleasesResponse.json();
+          setNewReleases(newReleasesData.albums.items);
+
+          // Fetch featured playlists
+          const playlistsResponse = await fetch(
+            "https://api.spotify.com/v1/browse/featured-playlists",
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          const playlistsData = await playlistsResponse.json();
+          setFeaturedPlaylists(playlistsData.playlists.items);
+
+          // Fetch genres
+          const genresResponse = await fetch(
+            "https://api.spotify.com/v1/browse/categories",
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          const genresData = await genresResponse.json();
+          setGenres(genresData.categories.items);
+
+          setLoading(false);
+        } catch (error) {
+          console.error("Error fetching data:", error);
+          setLoading(false);
+        }
+      };
+      fetchData();
+    }
+  }, [token]);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchTerm) return;
+    setLoading(true);
+
+    try {
+      const response = await fetch(
+        `https://api.spotify.com/v1/search?q=${searchTerm}&type=track&limit=12`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const data = await response.json();
+      setSearchResults(data.tracks.items);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error searching:", error);
+      setLoading(false);
+    }
   };
 
-  useEffect(() => {
-    getMusicTracks();
-  }, []);
+  const togglePlay = (previewUrl) => {
+    if (playing && playing.url === previewUrl) {
+      playing.audio.pause();
+      setPlaying(null);
+    } else {
+      if (playing) {
+        playing.audio.pause();
+      }
+      const audio = new Audio(previewUrl);
+      audio.play();
+      setPlaying({ url: previewUrl, audio });
+    }
+  };
+
+  // Track Card Component
+  const TrackCard = ({ track }) => (
+    <div className="col-lg-3 col-md-6 mb-4">
+      <div className="card h-100">
+        <img
+          src={track.album?.images[0]?.url || track.images?.[0]?.url}
+          className="card-img-top"
+          alt={track.name}
+          style={{ height: "200px", objectFit: "cover" }}
+        />
+        <div className="card-body d-flex flex-column">
+          <h5 className="card-title text-truncate">{track.name}</h5>
+          <p className="card-text">
+            {track.artists?.map((artist) => artist.name).join(", ")}
+          </p>
+          {track.preview_url ? (
+            <button
+              className={`btn ${
+                playing?.url === track.preview_url ? "btn-danger" : "btn-success"
+              } mt-auto`}
+              onClick={() => togglePlay(track.preview_url)}
+            >
+              <i className={`fas ${playing?.url === track.preview_url ? "fa-stop" : "fa-play"}`}></i>
+              {" "}
+              {playing?.url === track.preview_url ? "Stop" : "Play"}
+            </button>
+          ) : (
+            <button className="btn btn-secondary mt-auto" disabled>
+              No Preview Available
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <>
-      {/* Navbar */}
-      <nav className="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div className="container-fluid">
+      <nav className="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+        <div className="container">
           <a className="navbar-brand" href="#">
-            🎵 Songs
+            🎵 Spotify Clone
           </a>
-          <button
-            className="navbar-toggler"
-            type="button"
-            data-bs-toggle="collapse"
-            data-bs-target="#navbarSupportedContent"
-            aria-controls="navbarSupportedContent"
-            aria-expanded="false"
-            aria-label="Toggle navigation"
-          >
-            <span className="navbar-toggler-icon"></span>
-          </button>
-          <div className="collapse navbar-collapse" id="navbarSupportedContent">
-            <div className="d-flex w-100 mt-2 mt-lg-0">
+          <form className="d-flex flex-grow-1 mx-4" onSubmit={handleSearch}>
+            <div className="input-group">
               <input
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-                className="form-control me-2 w-100"
+                className="form-control"
                 type="search"
-                placeholder="Search"
-                aria-label="Search"
+                placeholder="Search for songs..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
               />
-              <button onClick={getMusicTracks} className="btn btn-outline-success">
-                Search
+              <button className="btn btn-success" type="submit">
+                <i className="fas fa-search"></i> Search
               </button>
             </div>
-          </div>
+          </form>
         </div>
       </nav>
 
-      {/* Container for Content */}
       <div className="container mt-4">
-        {/* Loader Section */}
-        {loader && (
-          <div className="d-flex justify-content-center align-items-center" style={{ height: "30vh" }}>
-            <div className="spinner-border text-primary" style={{ width: "3rem", height: "3rem" }} role="status">
+        {loading ? (
+          <div className="d-flex justify-content-center my-5">
+            <div className="spinner-border text-success" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <section className="mb-5">
+                <h2 className="mb-4">Search Results</h2>
+                <div className="row">
+                  {searchResults.map((track) => (
+                    <TrackCard key={track.id} track={track} />
+                  ))}
+                </div>
+              </section>
+            )}
 
-        {/* Tracks Section */}
-        {!loader && (
-          <div className="row justify-content-center">
-            {tracks.length > 0 ? (
-              tracks.map((element) => (
-                <div key={element.id} className="col-lg-3 col-md-4 col-sm-6 col-12 mb-4 d-flex justify-content-center">
-                  <div className="card shadow-lg" style={{ width: "18rem" }}>
-                    <img src={element.album.images[0].url} className="card-img-top" alt="Album Cover" />
-                    <div className="card-body text-center">
-                      <h5 className="card-title">{element.name}</h5>
-                      <p className="card-text">🎤 Artist: {element.album.artists[0].name}</p>
-                      <p className="card-text">📅 Release Date: {element.album.release_date}</p>
-                      {element.preview_url ? (
-                        <audio src={element.preview_url} controls className="w-100"></audio>
-                      ) : (
-                        <p className="text-danger">No Preview Available</p>
-                      )}
+            {/* New Releases Section */}
+            <section className="mb-5">
+              <h2 className="mb-4">New Releases</h2>
+              <div className="row">
+                {newReleases.slice(0, 4).map((track) => (
+                  <TrackCard key={track.id} track={track} />
+                ))}
+              </div>
+            </section>
+
+            {/* Featured Playlists Section */}
+            <section className="mb-5">
+              <h2 className="mb-4">Featured Playlists</h2>
+              <div className="row">
+                {featuredPlaylists.slice(0, 4).map((playlist) => (
+                  <div key={playlist.id} className="col-lg-3 col-md-6 mb-4">
+                    <div className="card h-100">
+                      <img
+                        src={playlist.images[0].url}
+                        className="card-img-top"
+                        alt={playlist.name}
+                        style={{ height: "200px", objectFit: "cover" }}
+                      />
+                      <div className="card-body">
+                        <h5 className="card-title">{playlist.name}</h5>
+                        <p className="card-text">{playlist.description}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
-            ) : (
-              !loader && <p className="text-center text-muted">No tracks found</p>
-            )}
-          </div>
+                ))}
+              </div>
+            </section>
+
+            {/* Genres Section */}
+            <section className="mb-5">
+              <h2 className="mb-4">Browse Genres</h2>
+              <div className="row">
+                {genres.slice(0, 8).map((genre) => (
+                  <div key={genre.id} className="col-lg-3 col-md-4 col-sm-6 mb-4">
+                    <div className="card h-100">
+                      <img
+                        src={genre.icons[0].url}
+                        className="card-img-top"
+                        alt={genre.name}
+                        style={{ height: "200px", objectFit: "cover" }}
+                      />
+                      <div className="card-body">
+                        <h5 className="card-title">{genre.name}</h5>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
         )}
       </div>
     </>
@@ -99,3 +254,4 @@ const App = () => {
 };
 
 export default App;
+
